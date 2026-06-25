@@ -1,0 +1,63 @@
+╔══════════════════════════════════════════════════════════════════╗
+║                    REGLAS DE TRABAJO                           ║
+║              StreamVault - Proyecto Personal                   ║
+╚══════════════════════════════════════════════════════════════════╝
+
+ 1. NUNCA hacer cambios sin permiso
+ 2. NUNCA sobreescribir archivos
+ 3. SIEMPRE preguntar antes de modificar
+ 4. SIEMPRE generar download/*.zip con los archivos actualizados cada vez que termines
+ 5. Guardar TODO en worklog
+ 6. Proyecto PROFESIONAL y ROBUSTO
+ 7. NUNCA hacer push/commit al repo
+ 8. NUNCA ADIVINAR - siempre preguntar
+ 9. El Preview Panel NO es visible para el usuario
+10. ZIPs con rutas completas
+
+══════════════════════════════════════════════════════════════════
+
+SETUP (Windows):
+
+  1. Extraer el ZIP en la carpeta deseada
+  2. Abrir terminal en la carpeta del proyecto
+  3. Ejecutar:  npm install
+  4. Ejecutar:  npx prisma db push
+  5. Ejecutar:  npx prisma generate
+  6. Iniciar el servidor:  npm run dev
+     ("dev": "next dev -p 3000")
+  7. Abrir en el navegador:  http://localhost:3000
+  8. (Opcional) Cargar datos de ejemplo:
+     npm run db:seed
+
+══════════════════════════════════════════════════════════════════
+
+IMPORTAR TUS PELICULAS Y SERIES:
+
+  1. Haz clic en el icono de ⚙️ (Configuración) en el navbar
+  2. CARPETAS DE PELICULAS:
+     - Puedes agregar varias carpetas (diferentes unidades)
+     - Ejemplo: D:\Peliculas, E:\Peliculas 4K, F:\Clasicos
+     - Click en "Agregar otra carpeta" para añadir más
+  3. CARPETAS DE SERIES:
+     - Igual, varias carpetas en cualquier unidad
+     - Ejemplo: D:\Series, F:\Anime, E:\Documentales
+     - Click en "Agregar otra carpeta" para añadir más
+  4. Consigue tu OMDB API Key (gratis, solo necesitas email):
+     - Ve a: https://www.omdbapi.com/apikey.aspx
+     - Selecciona "FREE", pon tu email
+     - Recibes la key al instante
+  5. Pega la API key en el campo correspondiente
+  6. Haz clic en "Guardar Configuración"
+  7. Haz clic en "Escanear e Importar Todo"
+  8. Espera a que termine (busca pósters, descripciones, ratings)
+  9. Refresca el navegador
+
+NOTAS:
+  - Soporta: .mp4, .mkv, .avi, .mov, .webm, .m4v
+  - Las carpetas se escanean recursivamente (subcarpetas incluidas)
+  - Lo que pongas en "Películas" se trata como película
+  - Lo que pongas en "Series" se trata como serie (S01E02, etc.)
+  - Los videos se reproducen directamente desde tu PC
+  - No se sube nada a internet (solo se buscan los pósters)
+
+══════════════════════════════════════════════════════════════════

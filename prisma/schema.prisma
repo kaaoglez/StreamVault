@@ -1,0 +1,73 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Movie {
+  id            String   @id @default(cuid())
+  imdbId        String?  // OMDB/IMDb ID for re-enrichment without searching
+  title         String
+  description   String
+  coverImage    String
+  backdropImage String
+  videoUrl      String?  // For streaming URLs; local files use filePath
+  filePath      String?  // Local file path (e.g. D:\Peliculas\Inception.mp4)
+  year          Int
+  rating        Float    @default(0)
+  duration      String?  // e.g. "2h 18m" or "52m"
+  genre         String
+  type          String   @default("movie") // "movie" or "series"
+  maturity      String   @default("TV-MA")
+  featured      Boolean  @default(false)
+  local         Boolean  @default(false) // true = scanned from local folder
+  subtitleVtt   String?  // Downloaded subtitle content (VTT format)
+  subtitleLang  String?  // Language code of downloaded subtitle (es, en, fr...)
+  userRating    Float?   // User's personal rating (0-5), null = not rated
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  episodes      Episode[]
+  favorites     Favorite[]
+  watchProgress  WatchProgress[]
+}
+
+model Episode {
+  id            String  @id @default(cuid())
+  seriesId      String
+  seasonNumber  Int
+  episodeNumber Int
+  title         String
+  description   String?
+  videoUrl      String?
+  filePath      String?  // Local file path for this episode
+  stillImage    String?
+  duration      String?
+  subtitleVtt   String?  // Downloaded subtitle content (VTT format)
+  subtitleLang  String?  // Language code of downloaded subtitle
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  series        Movie          @relation(fields: [seriesId], references: [id], onDelete: Cascade)
+  watchProgress  WatchProgress[]
+}
+
+model Favorite {
+  id         String   @id @default(cuid())
+  movieId    String
+  createdAt  DateTime @default(now())
+  movie      Movie    @relation(fields: [movieId], references: [id], onDelete: Cascade)
+}
+
+model WatchProgress {
+  id         String   @id @default(cuid())
+  movieId    String
+  episodeId  String?
+  progress   Float    @default(0) // 0-100 percentage
+  lastWatched DateTime @default(now())
+  createdAt  DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  movie      Movie    @relation(fields: [movieId], references: [id], onDelete: Cascade)
+  episode    Episode? @relation(fields: [episodeId], references: [id], onDelete: SetNull)
+}

@@ -1,0 +1,10 @@
+{
+  "moviesFolders": [
+    "\\\\192.168.3.2\\Canal\\Movies"
+  ],
+  "seriesFolders": [
+    "\\\\192.168.3.2\\Canal\\TV Shows"
+  ],
+  "omdbApiKey": "38e045a",
+  "opensubtitlesApiKey": "\tBFixgq7ZLHYgqBuEmBj1xqPMuK9a0BKi"
+}
