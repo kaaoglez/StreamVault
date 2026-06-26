@@ -39,6 +39,11 @@ function getPosterImage(item: HeroItem): string {
   return item.coverImage || '';
 }
 
+function hasValidPoster(item: HeroItem): boolean {
+  const poster = getPosterImage(item);
+  return Boolean(poster && poster.trim().length > 0);
+}
+
 // ─── Main Component ──────────────────────────────────────
 
 export function HeroCarousel() {
@@ -54,8 +59,9 @@ export function HeroCarousel() {
       const trendingRes = await fetch('/api/trending');
       if (trendingRes.ok) {
         const trendingData = await trendingRes.json();
-        if (trendingData.items && trendingData.items.length > 0) {
-          setItems(trendingData.items);
+        const filtered = (trendingData.items || []).filter(hasValidPoster);
+        if (filtered.length > 0) {
+          setItems(filtered);
           setLoading(false);
           return;
         }
@@ -63,8 +69,9 @@ export function HeroCarousel() {
       const res = await fetch('/api/movies?limit=5&sort=rating&local=true');
       if (res.ok) {
         const data = await res.json();
-        if (data.movies && data.movies.length > 0) {
-          setItems(data.movies);
+        const filtered = (data.movies || []).filter(hasValidPoster);
+        if (filtered.length > 0) {
+          setItems(filtered);
           setLoading(false);
           return;
         }
@@ -72,8 +79,9 @@ export function HeroCarousel() {
       const res2 = await fetch('/api/movies?limit=5&sort=rating');
       if (res2.ok) {
         const data2 = await res2.json();
-        if (data2.movies && data2.movies.length > 0) {
-          setItems(data2.movies);
+        const filtered = (data2.movies || []).filter(hasValidPoster);
+        if (filtered.length > 0) {
+          setItems(filtered);
         }
       }
     } catch {}
@@ -149,12 +157,16 @@ export function HeroCarousel() {
   const ext = isExternal(currentItem);
   const genres = (currentItem.genre || '').split(',').map((g: string) => g.trim()).filter(Boolean);
 
+  const prevPoster = getPosterImage(prevItem);
+  const centerPoster = getPosterImage(currentItem);
+  const nextPoster = getPosterImage(nextItem);
+
   return (
     <section
       className="relative w-full h-[90vh] min-h-[620px] overflow-hidden bg-[#080808]"
       id="home"
     >
-      {/* ── Ambient background ── */}
+      {/* ── Ambient background (blurred center poster) ── */}
       <AnimatePresence mode="wait">
         <motion.div
           key={`bg-${currentItem.id}`}
@@ -164,9 +176,9 @@ export function HeroCarousel() {
           transition={{ duration: 1 }}
           className="absolute inset-0"
         >
-          {getPosterImage(currentItem) && (
+          {centerPoster && (
             <img
-              src={getPosterImage(currentItem)}
+              src={centerPoster}
               alt=""
               aria-hidden
               className="w-full h-full object-cover scale-150"
@@ -176,14 +188,12 @@ export function HeroCarousel() {
         </motion.div>
       </AnimatePresence>
 
-      {/* ── Top/bottom gradient overlays ── */}
+      {/* ── Gradient overlays ── */}
       <div className="absolute inset-0 bg-gradient-to-b from-[#080808]/70 via-transparent to-[#141414]" />
-
-      {/* ── Left gradient for text readability ── */}
-      <div className="absolute inset-0 bg-gradient-to-r from-[#080808] via-[#080808]/80 to-transparent z-[1]" />
+      <div className="absolute inset-0 bg-gradient-to-r from-[#080808] via-[#080808]/70 to-transparent z-[1]" />
 
       {/* ═══════════════════════════════════════════════════
-          3D COVERFLOW — shifted right to make room for info
+          3D COVERFLOW — center focused, sides blurred
           ═══════════════════════════════════════════════════ */}
       <div
         className="absolute inset-0 flex items-center justify-center"
@@ -211,8 +221,8 @@ export function HeroCarousel() {
             onClick={goPrev}
           >
             <div className="relative w-full h-full rounded-xl overflow-hidden shadow-2xl shadow-black/50">
-              <img
-                src={getPosterImage(prevItem)}
+              {prevPoster && <img
+                src={prevPoster}
                 alt={prevItem.title}
                 className="w-full h-full object-cover"
                 draggable={false}
@@ -220,12 +230,11 @@ export function HeroCarousel() {
                   const el = e.target as HTMLImageElement;
                   el.src = `https://placehold.co/400x600/1a1a1a/333?text=${encodeURIComponent(prevItem.title)}`;
                 }}
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent" />
+              />}
             </div>
           </motion.div>
 
-          {/* ── CENTER CARD (focused, hero) ── */}
+          {/* ── CENTER CARD (no filters, clean poster) ── */}
           <AnimatePresence mode="wait">
             <motion.div
               key={`center-${currentItem.id}`}
@@ -241,7 +250,7 @@ export function HeroCarousel() {
               }}
             >
               {/* Glow behind card */}
-              {getPosterImage(currentItem) && (
+              {centerPoster && (
                 <div
                   className="absolute -inset-8 -z-10 rounded-3xl"
                   style={{
@@ -252,17 +261,22 @@ export function HeroCarousel() {
               )}
 
               <div className="relative w-full h-full rounded-2xl overflow-hidden shadow-2xl shadow-black/70 ring-1 ring-white/[0.08]">
-                <img
-                  src={getPosterImage(currentItem)}
-                  alt={currentItem.title}
-                  className="w-full h-full object-cover"
-                  draggable={false}
-                  onError={(e) => {
-                    const el = e.target as HTMLImageElement;
-                    el.src = `https://placehold.co/400x600/1a1a1a/333?text=${encodeURIComponent(currentItem.title)}`;
-                  }}
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/30 via-transparent to-transparent pointer-events-none" />
+                {centerPoster ? (
+                  <img
+                    src={centerPoster}
+                    alt={currentItem.title}
+                    className="w-full h-full object-cover"
+                    draggable={false}
+                    onError={(e) => {
+                      const el = e.target as HTMLImageElement;
+                      el.src = `https://placehold.co/400x600/1a1a1a/333?text=${encodeURIComponent(currentItem.title)}`;
+                    }}
+                  />
+                ) : (
+                  <div className="w-full h-full bg-[#1a1a1a] flex items-center justify-center">
+                    <span className="text-gray-600 text-sm">{currentItem.title}</span>
+                  </div>
+                )}
 
                 {/* Rating badge */}
                 {currentItem.rating > 0 && (
@@ -313,8 +327,8 @@ export function HeroCarousel() {
             onClick={goNext}
           >
             <div className="relative w-full h-full rounded-xl overflow-hidden shadow-2xl shadow-black/50">
-              <img
-                src={getPosterImage(nextItem)}
+              {nextPoster && <img
+                src={nextPoster}
                 alt={nextItem.title}
                 className="w-full h-full object-cover"
                 draggable={false}
@@ -322,8 +336,7 @@ export function HeroCarousel() {
                   const el = e.target as HTMLImageElement;
                   el.src = `https://placehold.co/400x600/1a1a1a/333?text=${encodeURIComponent(nextItem.title)}`;
                 }}
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent" />
+              />}
             </div>
           </motion.div>
         </div>
@@ -349,7 +362,7 @@ export function HeroCarousel() {
         </div>
       )}
 
-      {/* ── Left Info Panel ── */}
+      {/* ── Left Info Panel (bottom-left) ── */}
       <div className="absolute bottom-0 left-0 z-30 pointer-events-none pb-12 md:pb-16">
         <div className="w-full max-w-[520px] px-6 sm:px-8 lg:px-12 pointer-events-auto">
           <AnimatePresence mode="wait">
