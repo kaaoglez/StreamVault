@@ -17,6 +17,8 @@ export interface Movie {
   maturity: string;
   featured: boolean;
   local?: boolean;
+  director?: string | null;
+  actors?: string | null; // Legacy — code uses relational Actor + MovieActor tables
   createdAt: string;
   updatedAt: string;
   episodes?: Episode[];

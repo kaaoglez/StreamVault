@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getMovieDetails, getSeasonEpisodes } from '@/lib/omdb'
 import { getConfig } from '@/lib/config'
+import { populateMovieCast } from '@/lib/cast-service'
 
 export async function POST(
   request: NextRequest,
@@ -75,6 +76,8 @@ export async function POST(
         duration: details.Runtime || movie.duration,
         genre: details.Genre || movie.genre,
         maturity,
+        actors: details.Actors || null,
+        director: details.Director || null,
       },
       include: { episodes: { orderBy: [{ seasonNumber: 'asc' }, { episodeNumber: 'asc' }] } },
     })
@@ -134,10 +137,20 @@ export async function POST(
       }
     }
 
+    // Populate cast from IMDb (non-blocking)
+    let castPopulated = 0
+    try {
+      const cast = await populateMovieCast(id, imdbId.trim(), details.Actors, details.Title || movie.title, parseInt(details.Year) || movie.year)
+      castPopulated = cast.length
+    } catch (err) {
+      console.error('[Enrich] Cast scrape failed (non-blocking):', err)
+    }
+
     return NextResponse.json({
       success: true,
       movie: updated,
       episodesCreated,
+      castPopulated,
       message: `"${details.Title}" actualizado correctamente desde IMDb`,
     })
   } catch (error) {

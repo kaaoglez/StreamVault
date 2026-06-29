@@ -8,30 +8,55 @@ datasource db {
 }
 
 model Movie {
-  id            String   @id @default(cuid())
-  imdbId        String?  // OMDB/IMDb ID for re-enrichment without searching
+  id            String       @id @default(cuid())
+  imdbId        String?      // OMDB/IMDb ID for re-enrichment without searching
   title         String
   description   String
   coverImage    String
   backdropImage String
-  videoUrl      String?  // For streaming URLs; local files use filePath
-  filePath      String?  // Local file path (e.g. D:\Peliculas\Inception.mp4)
+  videoUrl      String?      // For streaming URLs; local files use filePath
+  filePath      String?      // Local file path (e.g. D:\Peliculas\Inception.mp4)
   year          Int
-  rating        Float    @default(0)
-  duration      String?  // e.g. "2h 18m" or "52m"
+  rating        Float        @default(0)
+  duration      String?      // e.g. "2h 18m" or "52m"
   genre         String
-  type          String   @default("movie") // "movie" or "series"
-  maturity      String   @default("TV-MA")
-  featured      Boolean  @default(false)
-  local         Boolean  @default(false) // true = scanned from local folder
-  subtitleVtt   String?  // Downloaded subtitle content (VTT format)
-  subtitleLang  String?  // Language code of downloaded subtitle (es, en, fr...)
-  userRating    Float?   // User's personal rating (0-5), null = not rated
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  type          String       @default("movie") // "movie" or "series"
+  maturity      String       @default("TV-MA")
+  featured      Boolean      @default(false)
+  local         Boolean      @default(false) // true = scanned from local folder
+  subtitleVtt   String?      // Downloaded subtitle content (VTT format)
+  subtitleLang  String?      // Language code of downloaded subtitle (es, en, fr...)
+  userRating    Float?       // User's personal rating (0-5), null = not rated
+  actors        String?      // Legacy field — kept to avoid destructive SQLite migration. Code uses Actor + MovieActor tables.
+  director      String?      // Director name(s) from OMDB
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
   episodes      Episode[]
   favorites     Favorite[]
   watchProgress  WatchProgress[]
+  cast          MovieActor[]
+}
+
+model Actor {
+  id        String       @id @default(cuid())
+  name      String
+  imdbId    String?      @unique // nmXXXXXXXX from IMDb
+  photoUrl  String?      // Persistent photo URL from IMDb CDN
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  movies    MovieActor[]
+}
+
+model MovieActor {
+  id        String  @id @default(cuid())
+  movieId   String
+  actorId   String
+  character String? // Role/character name
+  order     Int     @default(0) // Billing order in credits
+  movie     Movie   @relation(fields: [movieId], references: [id], onDelete: Cascade)
+  actor     Actor   @relation(fields: [actorId], references: [id], onDelete: Cascade)
+
+  @@unique([movieId, actorId]) // Prevent duplicate cast entries
 }
 
 model Episode {
@@ -67,7 +92,7 @@ model WatchProgress {
   progress   Float    @default(0) // 0-100 percentage
   lastWatched DateTime @default(now())
   createdAt  DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  updatedAt  DateTime @updatedAt
   movie      Movie    @relation(fields: [movieId], references: [id], onDelete: Cascade)
   episode    Episode? @relation(fields: [episodeId], references: [id], onDelete: SetNull)
 }

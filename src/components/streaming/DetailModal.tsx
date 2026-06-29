@@ -31,6 +31,9 @@ export function DetailModal() {
   const [enrichOk, setEnrichOk] = useState(false);
   const [subtLoading, setSubtLoading] = useState(false);
   const [subtMsg, setSubtMsg] = useState('');
+  const [cast, setCast] = useState<{ name: string; imdbId: string; photoUrl: string | null; character: string }[]>([]);
+  const [castDirector, setCastDirector] = useState<string | null>(null);
+  const [castLoading, setCastLoading] = useState(false);
 
   const fetchDetails = useCallback(async (movieId: string) => {
     setLoading(true);
@@ -49,6 +52,23 @@ export function DetailModal() {
       setLoading(false);
     }
   }, [selectedMovie]);
+
+  // Fetch cast with photos
+  const fetchCast = useCallback(async (movieId: string) => {
+    setCastLoading(true);
+    setCast([]);
+    setCastDirector(null);
+    try {
+      const res = await fetch(`/api/movies/${movieId}/cast`);
+      if (res.ok) {
+        const data = await res.json();
+        setCast(data.cast || []);
+        setCastDirector(data.director || null);
+      }
+    } catch {} finally {
+      setCastLoading(false);
+    }
+  }, []);
 
   // Check favorite status
   const checkFavorite = useCallback(async (movieId: string) => {
@@ -110,6 +130,7 @@ export function DetailModal() {
         setEnrichOk(true);
         setEnrichMsg(data.message || 'Actualizado correctamente');
         fetchDetails(m.id);
+        fetchCast(m.id);
         window.dispatchEvent(new CustomEvent('movies-changed'));
       } else {
         setEnrichOk(false);
@@ -153,11 +174,14 @@ export function DetailModal() {
     if (isDetailOpen && selectedMovie) {
       document.body.style.overflow = 'hidden';
       fetchDetails(selectedMovie.id);
+      fetchCast(selectedMovie.id);
       checkFavorite(selectedMovie.id);
     } else {
       document.body.style.overflow = '';
       setMovieDetails(null);
       setEpisodes([]);
+      setCast([]);
+      setCastDirector(null);
       setIsFavorited(false);
       setUserRating(0);
       setImdbInput('');
@@ -170,7 +194,7 @@ export function DetailModal() {
     return () => {
       document.body.style.overflow = '';
     };
-  }, [isDetailOpen, selectedMovie, fetchDetails, checkFavorite]);
+  }, [isDetailOpen, selectedMovie, fetchDetails, fetchCast, checkFavorite]);
 
   // Sync userRating when ratings-changed event fires
   useEffect(() => {
@@ -408,6 +432,63 @@ export function DetailModal() {
                 <p className="text-gray-300 text-base md:text-lg leading-relaxed mb-6 max-w-3xl">
                   {movie.description}
                 </p>
+
+                {/* Cast Section */}
+                {(cast.length > 0 || castLoading) && (
+                  <div className="mb-6 max-w-3xl">
+                    <h2 className="text-lg font-semibold text-white mb-3">Reparto</h2>
+
+                    {/* Director */}
+                    {castDirector && (
+                      <div className="mb-3">
+                        <span className="text-xs text-gray-500 uppercase tracking-wider">Director</span>
+                        <p className="text-sm text-gray-200 mt-0.5">{castDirector}</p>
+                      </div>
+                    )}
+
+                    {castLoading ? (
+                      <div className="flex gap-4 overflow-x-auto pb-2">
+                        {Array.from({ length: 6 }).map((_, i) => (
+                          <div key={i} className="flex-shrink-0 w-[100px]">
+                            <Skeleton className="w-[100px] h-[100px] rounded-full bg-[#222]" />
+                            <Skeleton className="w-20 h-3 mt-2 bg-[#222]" />
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-thin">
+                        {cast.map((member) => (
+                          <div key={member.imdbId || member.name} className="flex-shrink-0 w-[68px] text-center group">
+                            {member.photoUrl ? (
+                              <img
+                                src={member.photoUrl}
+                                alt={member.name}
+                                className="w-[68px] h-[68px] rounded-full object-cover mx-auto ring-2 ring-white/10 group-hover:ring-white/30 transition-all"
+                                onError={(e) => {
+                                  const el = e.target as HTMLImageElement;
+                                  el.style.display = 'none';
+                                  (el.nextElementSibling as HTMLElement).style.display = 'flex';
+                                }}
+                              />
+                            ) : null}
+                            <div
+                              className={cn(
+                                "w-[68px] h-[68px] rounded-full mx-auto items-center justify-center bg-[#2a2a2a] text-gray-500 text-lg font-bold select-none",
+                                member.photoUrl ? "hidden" : "flex"
+                              )}
+                            >
+                              {member.name.charAt(0).toUpperCase()}
+                            </div>
+                            <p className="text-[10px] text-white mt-1.5 font-medium truncate leading-tight">{member.name}</p>
+                            {member.character && (
+                              <p className="text-[9px] text-gray-500 truncate leading-tight">{member.character}</p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* IMDb Manual Enrich */}
                 <div className="mb-4 p-4 rounded-lg bg-white/5 border border-white/10 max-w-3xl">
