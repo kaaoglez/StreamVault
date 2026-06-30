@@ -14,7 +14,7 @@ export async function POST() {
       where: {
         imdbId: { not: null },
       },
-      select: { id: true, imdbId: true, title: true },
+      select: { id: true, imdbId: true, title: true, year: true, actors: true },
     })
 
     const results: { title: string; cast: number; error?: string }[] = []
@@ -30,7 +30,7 @@ export async function POST() {
       }
 
       try {
-        const cast = await populateMovieCast(movie.id, movie.imdbId!)
+        const cast = await populateMovieCast(movie.id, movie.imdbId!, movie.actors || null, movie.title, movie.year || undefined)
         results.push({ title: movie.title, cast: cast.length })
         totalCast += cast.length
       } catch (err) {

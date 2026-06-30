@@ -1,17 +1,18 @@
-// ─── Cast Service ─────────────────────────────────────────
-// Populates cast using Wikipedia: gets full cast list from movie page,
-// then fetches actor photos (MovieStillsDB → Wikipedia fallback).
-// Falls back to OMDB names (no photos) if Wikipedia fails.
+// ─── Cast Service (OMDB-First) ───────────────────────────────
+// Strategy:
+//   1. OMDB actors (top 3) → fetch photos via MovieStillsDB → Wikipedia fallback
+//   2. Wikipedia extras → appended after OMDB (deduplicated)
+//   3. Atomic save with $transaction (never lose existing cast on failure)
+//   4. If new cast would be empty, keep existing data untouched
 
 import { execFileSync } from 'child_process'
 import { db } from '@/lib/db'
 
-// ── Delay helper to avoid Wikipedia rate limiting ─────────
+// ── Delay helper to avoid rate limiting ─────────────────────
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 
-// ── HTTP helper: tries fetch, then curl (works on any OS) ─────
+// ── HTTP helper: tries fetch, then curl ─────────────────────
 async function fetchJson(url: string, timeoutMs = 8000): Promise<any> {
-  // 1. Try native fetch
   try {
     const res = await fetch(url, {
       headers: {
@@ -23,7 +24,6 @@ async function fetchJson(url: string, timeoutMs = 8000): Promise<any> {
     if (res.ok) return await res.json()
   } catch { /* fetch failed */ }
 
-  // 2. Fallback: curl via execFileSync (no shell = no & interpretation issues on Windows)
   try {
     const out = execFileSync('curl', [
       '-s', '--max-time', String(Math.ceil(timeoutMs / 1000)), url
@@ -51,10 +51,9 @@ interface RawCastMember {
   character: string
 }
 
-// ── Get actor photo: MovieStillsDB first (100% success), Wikipedia fallback ──
+// ── Get actor photo: MovieStillsDB first, Wikipedia fallback ──
 async function getActorPhoto(actorName: string): Promise<string | null> {
   // 1. MovieStillsDB — curl search page, extract TMDB profile photo URL
-  //    Most reliable: no API key, no rate limit, professional headshots
   try {
     const searchUrl = `https://www.moviestillsdb.com/search?query=${encodeURIComponent(actorName)}`
     const out = execFileSync('curl', [
@@ -64,7 +63,7 @@ async function getActorPhoto(actorName: string): Promise<string | null> {
     if (match) {
       return match[0].replace(/\/w185\//, '/w400/')
     }
-  } catch { /* moviestillsdb failed, try wiki */ }
+  } catch { /* moviestillsdb failed */ }
 
   // 2. Wikipedia REST API (fallback)
   try {
@@ -73,7 +72,7 @@ async function getActorPhoto(actorName: string): Promise<string | null> {
       `https://en.wikipedia.org/api/rest_v1/page/summary/${encoded}`
     )
     if (data?.originalimage?.source) {
-      return data.originalimage.source // full-size image, never fails
+      return data.originalimage.source
     }
   } catch { /* both failed */ }
 
@@ -81,10 +80,7 @@ async function getActorPhoto(actorName: string): Promise<string | null> {
 }
 
 // ── Wikipedia: search movie/series page by title + year ──────────
-// Tries multiple search queries in order until one returns results:
-//   1. "Title Year film"    (e.g. "Oppenheimer 2023 film")
-//   2. "Title Year"          (e.g. "The Sopranos 1999")
-//   3. "Title"               (e.g. "The Usual Suspects")
+// 3-step fallback: "Title Year film" → "Title Year" → "Title"
 async function findWikiPage(title: string, year: number): Promise<string | null> {
   const queries = [
     `${title} ${year} film`,
@@ -100,7 +96,6 @@ async function findWikiPage(title: string, year: number): Promise<string | null>
       )
       if (!data || !data[1] || data[1].length === 0) continue
 
-      // Pick the best match — prefer the one that includes the year
       let page = data[1][0]
       for (const candidate of data[1]) {
         if (candidate.includes(String(year)) || candidate.toLowerCase().includes(title.toLowerCase())) {
@@ -120,25 +115,71 @@ async function findWikiPage(title: string, year: number): Promise<string | null>
   return null
 }
 
+// ── Non-actor word/phrase filters for Wikipedia cast extraction ──
+// These catch descriptive text that Wikipedia puts inside <li> elements
+// in the Cast section but are NOT actual actor names.
+const NON_ACTOR_PATTERNS = [
+  /\[edit\]/i,            // Wikipedia section edit links
+  /\bcast\b/i,            // "ensemble cast", "supporting cast"
+  /\bcameo\b/i,           // "cameo appearance"
+  /\bappearance\b/i,      // "special appearance"
+  /\bnarrator\b/i,        // narrator entries
+  /\bfootage\b/i,         // "archival footage"
+  /\bthe\b/i,             // "The eponymous Fellowship", "The Company", etc.
+  /\bfellowship\b/i,      // specific to LOTR
+  /\bensemble\b/i,         // "ensemble" references
+  /\bvoice\b/i,           // "voice only", "voice of"
+  /\buncredited\b/i,      // uncredited roles
+  /\bdouble\b/i,          // "body double", "stunt double"
+  /\bstand-in\b/i,        // stand-in references
+]
+
+function isNonActor(name: string, link: string): boolean {
+  // Check link-based filters first
+  if (
+    link.startsWith('File:') ||
+    link.startsWith('Category:') ||
+    link.startsWith('Help:') ||
+    link.startsWith('Wikipedia:') ||
+    link.startsWith('Template:') ||
+    link.startsWith('List_of') ||
+    link.startsWith('List ')
+  ) return true
+
+  // Check name-based filters
+  if (
+    /^List\s/i.test(name) ||
+    name.startsWith('[') ||
+    name.length < 3 ||
+    name.length > 50
+  ) return true
+
+  // Check non-actor word patterns against both name and link text
+  for (const pattern of NON_ACTOR_PATTERNS) {
+    if (pattern.test(name) || pattern.test(link.replace(/_/g, ' '))) {
+      return true
+    }
+  }
+
+  return false
+}
+
 // ── Wikipedia: extract actor names from Cast section ─────────
-// Uses a SINGLE request for full page text, then parses locally.
-// This avoids rate limiting from multiple API calls.
 async function getWikiCast(pageName: string): Promise<string[]> {
   try {
-    // Get full page HTML in ONE request (follows redirects automatically)
     const pageData = await fetchJson(
       `https://en.wikipedia.org/w/api.php?action=parse&page=${encodeURIComponent(pageName)}&prop=text&redirects=true&format=json`,
-      15000 // full page text can be large, need more time
+      15000
     )
     const fullHtml = pageData?.parse?.text?.['*']
     if (!fullHtml) return []
 
-    // Find the Cast section: look for <h2> or <h3> heading containing "Cast" or "Starring"
+    // Find the Cast section heading
     const castHeadingRegex = /<(?:h[23])[^>]*>.*?(?:Cast|Starring).*?<\/(?:h[23])>/i
     const headingMatch = castHeadingRegex.exec(fullHtml)
     if (!headingMatch) return []
 
-    // Extract everything after the Cast heading until the next heading of same or higher level
+    // Extract content between Cast heading and next heading
     const afterCast = fullHtml.substring(headingMatch.index + headingMatch[0].length)
     const nextHeadingRegex = /<(?:h[23])[^>]*>/i
     const nextHeading = nextHeadingRegex.exec(afterCast)
@@ -146,10 +187,8 @@ async function getWikiCast(pageName: string): Promise<string[]> {
       ? afterCast.substring(0, nextHeading.index)
       : afterCast
 
-    // Extract actor names from Cast section
-    // Pattern: each <li> starts with actor link, e.g.:
-    //   <li><a href="/wiki/Name">Name</a> as <a>Character</a>...
-    // Strategy: for each <li>, take ONLY the FIRST /wiki/ link = the actor name
+    // Parse each <li>: take FIRST /wiki/ link = actor name
+    // Non-greedy ([\s\S]*?) naturally consumes nested <li>s into parent match
     const liRegex = /<li[^>]*>([\s\S]*?)<\/li>/gi
     const seen = new Set<string>()
     const actors: string[] = []
@@ -165,22 +204,8 @@ async function getWikiCast(pageName: string): Promise<string[]> {
       const link = linkMatch[1]
       const name = linkMatch[2].trim()
 
-      // Skip non-people links
-      if (
-        link.startsWith('File:') ||
-        link.startsWith('Category:') ||
-        link.startsWith('Help:') ||
-        link.startsWith('Wikipedia:') ||
-        link.startsWith('Template:') ||
-        link.startsWith('List_of') ||
-        link.startsWith('List ') ||
-        /^List\s/i.test(name) ||
-        link.includes('(') ||  // disambiguation/qualifier
-        name.startsWith('[') ||
-        name.length < 3 ||
-        name.length > 50 ||
-        seen.has(name.toLowerCase())
-      ) continue
+      // Skip non-actor entries (NO link.includes('(') filter — actors like Hugo_Weaving_(actor) are valid)
+      if (isNonActor(name, link) || seen.has(name.toLowerCase())) continue
 
       seen.add(name.toLowerCase())
       actors.push(name)
@@ -192,7 +217,7 @@ async function getWikiCast(pageName: string): Promise<string[]> {
   }
 }
 
-// ── Main: populate cast for a movie ───────────────────────────
+// ── Main: populate cast for a movie (OMDB-first strategy) ─────
 export async function populateMovieCast(
   movieId: string,
   imdbId: string,
@@ -201,80 +226,97 @@ export async function populateMovieCast(
   movieYear?: number,
   maxCast = 15
 ): Promise<CastWithActor[]> {
-  // 1. Try Wikipedia (full cast list + photos)
-  let castList: RawCastMember[] = []
-  if (movieTitle && movieYear) {
-    console.log(`[Cast Service] Trying Wikipedia for "${movieTitle}" (${movieYear})`)
-    const wikiPage = await findWikiPage(movieTitle, movieYear)
-    if (wikiPage) {
-      console.log(`[Cast Service] Found Wikipedia page: ${wikiPage}`)
-      const actorNames = await getWikiCast(wikiPage)
-      if (actorNames.length > 0) {
-        console.log(`[Cast Service] Wikipedia cast: ${actorNames.length} actors, fetching photos sequentially...`)
-        castList = []
-        // Fetch photos ONE BY ONE with delay to avoid rate limiting
-        for (const name of actorNames.slice(0, maxCast)) {
-          const photoUrl = await getActorPhoto(name)
-          castList.push({ name, imdbId: '', photoUrl, character: '' })
-          await sleep(200) // moviestillsdb has no rate limit, wiki fallback is rare
-        }
-        console.log(`[Cast Service] Wikipedia: ${castList.filter(c => c.photoUrl).length} with photos, ${castList.length} total`)
-      }
-    }
-  }
+  const finalCast: RawCastMember[] = []
+  const omdbNamesLower = new Set<string>()
 
-  // 2. Fallback: OMDB actor names only, no photos (limited to ~3, not worth fetching)
-  if (castList.length === 0 && actorsFromOmdb && actorsFromOmdb !== 'N/A') {
+  // ─── STEP 1: OMDB actors FIRST (top 3) with photos ──────
+  if (actorsFromOmdb && actorsFromOmdb !== 'N/A') {
     const names = actorsFromOmdb
       .split(',')
       .map(n => n.trim())
       .filter(Boolean)
-      .slice(0, maxCast)
+      .slice(0, 3) // Top 3 from OMDB are reliable
 
-    console.log(`[Cast Service] OMDB fallback: ${names.length} actors, no photos`)
-    castList = names.map(name => ({ name, imdbId: '', photoUrl: null, character: '' }))
-  }
-
-  if (castList.length === 0) return []
-
-  // 3. Delete existing cast relations (handles re-enrich)
-  await db.movieActor.deleteMany({ where: { movieId } })
-
-  // 4. Upsert actors and create relations
-  for (let i = 0; i < castList.length; i++) {
-    const member = castList[i]
-    let actorId: string
-
-    if (member.imdbId) {
-      await db.actor.upsert({
-        where: { imdbId: member.imdbId },
-        create: { name: member.name, imdbId: member.imdbId, photoUrl: member.photoUrl },
-        update: { ...(member.photoUrl ? { photoUrl: member.photoUrl } : {}) },
-      })
-      const actor = await db.actor.findUnique({ where: { imdbId: member.imdbId } })
-      if (!actor) continue
-      actorId = actor.id
-    } else {
-      const existing = await db.actor.findFirst({ where: { name: member.name } })
-      if (existing) {
-        if (member.photoUrl && !existing.photoUrl) {
-          await db.actor.update({ where: { id: existing.id }, data: { photoUrl: member.photoUrl } })
-        }
-        actorId = existing.id
-      } else {
-        const created = await db.actor.create({
-          data: { name: member.name, imdbId: null, photoUrl: member.photoUrl },
-        })
-        actorId = created.id
+    if (names.length > 0) {
+      console.log(`[Cast Service] OMDB actors (${names.length}): ${names.join(', ')}`)
+      for (const name of names) {
+        omdbNamesLower.add(name.toLowerCase())
+        const photoUrl = await getActorPhoto(name)
+        finalCast.push({ name, imdbId: '', photoUrl, character: '' })
+        await sleep(200)
       }
+      console.log(`[Cast Service] OMDB: ${finalCast.filter(c => c.photoUrl).length}/${finalCast.length} with photos`)
     }
-
-    await db.movieActor.create({
-      data: { movieId, actorId, character: member.character || null, order: i },
-    })
   }
 
-  console.log(`[Cast Service] Saved ${castList.length} cast members for ${imdbId}`)
+  // ─── STEP 2: Wikipedia extras (skip OMDB duplicates) ────
+  if (movieTitle && movieYear && finalCast.length < maxCast) {
+    console.log(`[Cast Service] Trying Wikipedia for extras: "${movieTitle}" (${movieYear})`)
+    const wikiPage = await findWikiPage(movieTitle, movieYear)
+    if (wikiPage) {
+      console.log(`[Cast Service] Found Wikipedia page: ${wikiPage}`)
+      const actorNames = await getWikiCast(wikiPage)
+      // Filter out OMDB duplicates
+      const extras = actorNames.filter(n => !omdbNamesLower.has(n.toLowerCase()))
+      console.log(`[Cast Service] Wikipedia: ${actorNames.length} total, ${extras.length} new (after OMDB dedup)`)
+
+      for (const name of extras.slice(0, maxCast - finalCast.length)) {
+        const photoUrl = await getActorPhoto(name)
+        finalCast.push({ name, imdbId: '', photoUrl, character: '' })
+        await sleep(200)
+      }
+      console.log(`[Cast Service] Wiki extras with photos: ${extras.slice(0, maxCast - finalCast.length).filter(n => finalCast.find(c => c.name === n)?.photoUrl).length}`)
+    }
+  }
+
+  // Safety: if new cast would be empty, don't touch existing data
+  if (finalCast.length === 0) {
+    console.log(`[Cast Service] No cast found for ${imdbId}, keeping existing data`)
+    return getMovieCast(movieId)
+  }
+
+  // ─── STEP 3: Atomic save with $transaction ───────────────
+  console.log(`[Cast Service] Saving ${finalCast.length} cast members for ${imdbId}...`)
+  await db.$transaction(async (tx) => {
+    // Delete existing cast relations
+    await tx.movieActor.deleteMany({ where: { movieId } })
+
+    // Upsert actors and create relations
+    for (let i = 0; i < finalCast.length; i++) {
+      const member = finalCast[i]
+      let actorId: string
+
+      if (member.imdbId) {
+        await tx.actor.upsert({
+          where: { imdbId: member.imdbId },
+          create: { name: member.name, imdbId: member.imdbId, photoUrl: member.photoUrl },
+          update: { ...(member.photoUrl ? { photoUrl: member.photoUrl } : {}) },
+        })
+        const actor = await tx.actor.findUnique({ where: { imdbId: member.imdbId } })
+        if (!actor) continue
+        actorId = actor.id
+      } else {
+        const existing = await tx.actor.findFirst({ where: { name: member.name } })
+        if (existing) {
+          if (member.photoUrl && !existing.photoUrl) {
+            await tx.actor.update({ where: { id: existing.id }, data: { photoUrl: member.photoUrl } })
+          }
+          actorId = existing.id
+        } else {
+          const created = await tx.actor.create({
+            data: { name: member.name, imdbId: null, photoUrl: member.photoUrl },
+          })
+          actorId = created.id
+        }
+      }
+
+      await tx.movieActor.create({
+        data: { movieId, actorId, character: member.character || null, order: i },
+      })
+    }
+  })
+
+  console.log(`[Cast Service] ✓ Saved ${finalCast.length} cast members for ${imdbId}`)
   return getMovieCast(movieId)
 }
 
