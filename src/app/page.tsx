@@ -18,6 +18,7 @@ import { MyListPage } from '@/components/streaming/MyListPage';
 import { useAppStore } from '@/store/app-store';
 import { Film, Tv, List, FolderOpen, PlayCircle } from 'lucide-react';
 import { StatsSection } from '@/components/streaming/StatsSection';
+import { NetflixTop10Row } from '@/components/streaming/NetflixTop10Row';
 
 function HomePage() {
   return (
@@ -25,6 +26,7 @@ function HomePage() {
       <HeroCarousel />
 
       <div className="relative z-10">
+        <NetflixTop10Row />
 
         {/* CONTINUAR VIENDO — right after Hero */}
         <section className="pt-4 md:pt-8">

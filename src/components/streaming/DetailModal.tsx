@@ -22,6 +22,7 @@ export function DetailModal() {
     useAppStore();
   const [movieDetails, setMovieDetails] = useState<Movie | null>(null);
   const [episodes, setEpisodes] = useState<Episode[]>([]);
+  const [isInDb, setIsInDb] = useState(true);
   const [loading, setLoading] = useState(false);
   const [isFavorited, setIsFavorited] = useState(false);
   const [userRating, setUserRating] = useState<number>(0);
@@ -44,10 +45,17 @@ export function DetailModal() {
         setMovieDetails(data);
         setEpisodes(data.episodes || []);
         setUserRating(data.userRating ?? 0);
+        setIsInDb(true);
+      } else {
+        // Movie not in DB (external movie like Netflix) — use data from selectedMovie
+        setMovieDetails(selectedMovie);
+        setUserRating(selectedMovie?.userRating ?? 0);
+        setIsInDb(false);
       }
     } catch {
       setMovieDetails(selectedMovie);
       setUserRating(selectedMovie?.userRating ?? 0);
+      setIsInDb(false);
     } finally {
       setLoading(false);
     }
@@ -64,11 +72,19 @@ export function DetailModal() {
         const data = await res.json();
         setCast(data.cast || []);
         setCastDirector(data.director || null);
+      } else if (selectedMovie?.actors) {
+        setCast(selectedMovie.actors.split(',').map((n) => ({ name: n.trim(), imdbId: '', photoUrl: null, character: '' })).filter((a) => a.name));
+        if (selectedMovie.director) setCastDirector(selectedMovie.director);
       }
-    } catch {} finally {
+    } catch {
+      if (selectedMovie?.actors) {
+        setCast(selectedMovie.actors.split(',').map((n) => ({ name: n.trim(), imdbId: '', photoUrl: null, character: '' })).filter((a) => a.name));
+        if (selectedMovie.director) setCastDirector(selectedMovie.director);
+      }
+    } finally {
       setCastLoading(false);
     }
-  }, []);
+  }, [selectedMovie]);
 
   // Check favorite status
   const checkFavorite = useCallback(async (movieId: string) => {
@@ -180,6 +196,7 @@ export function DetailModal() {
       document.body.style.overflow = '';
       setMovieDetails(null);
       setEpisodes([]);
+      setIsInDb(true);
       setCast([]);
       setCastDirector(null);
       setIsFavorited(false);
@@ -458,12 +475,23 @@ export function DetailModal() {
                     ) : (
                       <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-thin">
                         {cast.map((member) => (
-                          <div key={member.imdbId || member.name} className="flex-shrink-0 w-[68px] text-center group">
+                          <button
+                            key={member.imdbId || member.name}
+                            onClick={() => {
+                              closeDetail();
+                              useAppStore.getState().openSearch();
+                              setTimeout(() => {
+                                window.dispatchEvent(new CustomEvent('actor-search', { detail: { actorName: member.name } }));
+                              }, 150);
+                            }}
+                            className="flex-shrink-0 w-[68px] text-center group cursor-pointer"
+                            title={`Buscar más de ${member.name}`}
+                          >
                             {member.photoUrl ? (
                               <img
                                 src={member.photoUrl}
                                 alt={member.name}
-                                className="w-[68px] h-[68px] rounded-full object-cover mx-auto ring-2 ring-white/10 group-hover:ring-white/30 transition-all"
+                                className="w-[68px] h-[68px] rounded-full object-cover mx-auto ring-2 ring-white/10 group-hover:ring-amber-500/50 transition-all"
                                 onError={(e) => {
                                   const el = e.target as HTMLImageElement;
                                   el.style.display = 'none';
@@ -479,18 +507,19 @@ export function DetailModal() {
                             >
                               {member.name.charAt(0).toUpperCase()}
                             </div>
-                            <p className="text-[10px] text-white mt-1.5 font-medium truncate leading-tight">{member.name}</p>
+                            <p className="text-[10px] text-white mt-1.5 font-medium truncate leading-tight group-hover:text-amber-400 transition-colors">{member.name}</p>
                             {member.character && (
                               <p className="text-[9px] text-gray-500 truncate leading-tight">{member.character}</p>
                             )}
-                          </div>
+                          </button>
                         ))}
                       </div>
                     )}
                   </div>
                 )}
 
-                {/* IMDb Manual Enrich */}
+                {/* IMDb Manual Enrich — only for DB movies */}
+                {isInDb && (
                 <div className="mb-4 p-4 rounded-lg bg-white/5 border border-white/10 max-w-3xl">
                   <div className="flex items-center gap-2 mb-3">
                     <Search className="h-4 w-4 text-gray-400" />
@@ -533,9 +562,10 @@ export function DetailModal() {
                     </p>
                   )}
                 </div>
+                )}
 
-                {/* Download Subtitles */}
-                {movie.imdbId && (
+                {/* Download Subtitles — only for DB movies */}
+                {isInDb && movie.imdbId && (
                   <div className="mb-4 p-4 rounded-lg bg-white/5 border border-white/10 max-w-3xl">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">

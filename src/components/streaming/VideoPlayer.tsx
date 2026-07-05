@@ -1830,17 +1830,24 @@ function PlayerContent({
                   className="relative w-24 md:w-28 shrink-0 aspect-video rounded-lg overflow-hidden bg-white/5 cursor-pointer"
                   onClick={playNextEpisodeNow}
                 >
-                  {nextEpisode.stillImage ? (
-                    <img
-                      src={nextEpisode.stillImage}
-                      alt={nextEpisode.title}
-                      className="h-full w-full object-cover"
-                    />
-                  ) : (
-                    <div className="flex h-full w-full items-center justify-center">
-                      <Play className="h-6 w-6 text-white/30" />
-                    </div>
-                  )}
+                  <img
+                    src={
+                      nextEpisode.stillImage
+                        || (nextEpisode.filePath ? `/api/episode/frame?id=${nextEpisode.id}` : null)
+                        || playingMovie?.backdropImage
+                    }
+                    alt={nextEpisode.title}
+                    className="h-full w-full object-cover"
+                    onError={(e) => {
+                      const t = e.currentTarget;
+                      t.style.display = 'none';
+                      const fb = t.nextElementSibling as HTMLElement;
+                      if (fb) fb.style.display = 'flex';
+                    }}
+                  />
+                  <div className="absolute inset-0 items-center justify-center bg-white/[0.04]" style={{ display: 'none' }}>
+                    <Play className="h-6 w-6 text-white/20" />
+                  </div>
                   <div className="absolute inset-0 flex items-center justify-center bg-black/30 hover:bg-black/50 transition-colors">
                     <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#e50914]/90 shadow-lg">
                       <Play className="h-4 w-4 text-white fill-white ml-0.5" />
@@ -1885,7 +1892,7 @@ function PlayerContent({
       </AnimatePresence>
 
       {/* ═══════════════════════════════════════════════════════ */}
-      {/* END SCREEN                                            */}
+      {/* END SCREEN — Dulo.tv style                              */}
       {/* ═══════════════════════════════════════════════════════ */}
       <AnimatePresence>
         {showEndScreen && (
@@ -1893,119 +1900,190 @@ function PlayerContent({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.3 }}
-            className="absolute inset-0 z-30 flex flex-col bg-black/95"
+            transition={{ duration: 0.4 }}
+            className="absolute inset-0 z-30 flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
-            <div
-              className="shrink-0 px-4 md:px-8 pt-4 md:pt-6 pb-3"
-              style={{ paddingTop: 'max(1rem, env(safe-area-inset-top))' }}
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-medium uppercase tracking-widest text-white/50 mb-1">
-                    Acabas de ver
-                  </p>
-                  <TruncatedText text={playingMovie?.title || ''} as="h2" className="text-lg md:text-xl font-bold text-white" />
-                  {playingEpisode && (
-                    <TruncatedText text={`T${playingEpisode.seasonNumber}:E${playingEpisode.episodeNumber} - ${playingEpisode.title}`} as="p" className="text-gray-400 text-sm" />
-                  )}
-                </div>
-                <div className="flex items-center gap-2 shrink-0 ml-4">
-                  <button
-                    className="flex items-center gap-2 rounded-lg bg-white/10 px-3 md:px-4 py-2 text-sm font-medium text-white hover:bg-white/20 active:bg-white/30 transition-colors"
-                    onClick={replayEpisode}
-                  >
-                    <RotateCcw className="h-4 w-4" />
-                    <span className="hidden sm:inline">Repetir</span>
-                  </button>
-                  {nextEpisode && (
+            {/* Blurred backdrop background */}
+            {playingMovie?.backdropImage && (
+              <div className="absolute inset-0">
+                <img
+                  src={playingMovie.backdropImage}
+                  alt=""
+                  className="w-full h-full object-cover scale-110 blur-2xl brightness-50"
+                />
+                <div className="absolute inset-0 bg-black/60" />
+              </div>
+            )}
+            {!playingMovie?.backdropImage && (
+              <div className="absolute inset-0 bg-[#0a0a0a]" />
+            )}
+
+            {/* Content */}
+            <div className="relative z-10 flex flex-col min-h-full">
+              {/* Top bar */}
+              <div
+                className="shrink-0 px-4 md:px-8 pt-5 md:pt-8 pb-4"
+                style={{ paddingTop: 'max(1.5rem, env(safe-area-inset-top))' }}
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-white/40 mb-2">
+                      Acabas de ver
+                    </p>
+                    <h2 className="text-xl md:text-2xl font-bold text-white leading-tight">
+                      {playingMovie?.title}
+                    </h2>
+                    {playingEpisode && (
+                      <p className="text-white/50 text-sm mt-1">
+                        T{playingEpisode.seasonNumber}:E{playingEpisode.episodeNumber} — {playingEpisode.title}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0 mt-6">
                     <button
-                      className="flex items-center gap-2 rounded-lg bg-[#e50914] px-3 md:px-4 py-2 text-sm font-semibold text-white hover:brightness-110 active:brightness-90 transition-all"
-                      onClick={playNextEpisodeNow}
+                      className="flex items-center gap-2 rounded-lg bg-white/10 px-3 md:px-4 py-2.5 text-sm font-medium text-white hover:bg-white/20 active:bg-white/30 transition-colors"
+                      onClick={replayEpisode}
                     >
-                      <SkipForward className="h-4 w-4" />
-                      <span className="hidden sm:inline">
-                        T{nextEpisode.seasonNumber}:E
-                        {nextEpisode.episodeNumber}
-                      </span>
-                      <span className="sm:hidden">Siguiente</span>
+                      <RotateCcw className="h-4 w-4" />
+                      <span className="hidden sm:inline">Repetir</span>
                     </button>
-                  )}
-                  <button
-                    className="flex h-9 w-9 items-center justify-center rounded-lg text-white/70 hover:bg-white/10 active:bg-white/20 transition-colors"
-                    onClick={handleClose}
-                    aria-label="Volver"
-                  >
-                    <X className="h-5 w-5" />
-                  </button>
+                    {nextEpisode && (
+                      <button
+                        className="flex items-center gap-2 rounded-lg bg-white text-black px-3 md:px-4 py-2.5 text-sm font-semibold hover:bg-white/90 active:brightness-90 transition-all shadow-[0_2px_12px_rgba(255,255,255,0.15)]"
+                        onClick={playNextEpisodeNow}
+                      >
+                        <SkipForward className="h-4 w-4" />
+                        <span className="hidden sm:inline">Siguiente episodio</span>
+                        <span className="sm:hidden">Siguiente</span>
+                      </button>
+                    )}
+                    <button
+                      className="flex h-10 w-10 items-center justify-center rounded-lg text-white/60 hover:text-white hover:bg-white/10 active:bg-white/20 transition-colors"
+                      onClick={handleClose}
+                      aria-label="Volver"
+                    >
+                      <X className="h-5 w-5" />
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
 
-            <div
-              className="flex-1 min-h-0 overflow-y-auto px-4 md:px-8 pb-6"
-              style={{
-                paddingBottom: 'max(1.5rem, env(safe-area-inset-bottom))',
-              }}
-            >
-              {episodes.length > 0 ? (
-                <>
-                  <h3 className="text-sm md:text-base font-semibold text-white mb-3 md:mb-4">
-                    {nextEpisode ? 'Otros episodios' : 'Episodios'}
-                  </h3>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-                    {episodes.map((ep) => {
-                      const isCurrent = playingEpisode?.id === ep.id;
-                      return (
-                        <button
-                          key={ep.id}
-                          className={`group flex items-start gap-3 p-3 rounded-xl text-left transition-colors ${isCurrent ? 'bg-white/10' : 'bg-white/5 hover:bg-white/10'}`}
-                          onClick={() => {
-                            if (playingMovie) {
-                              setShowEndScreen(false);
-                              openPlayer(playingMovie, ep);
-                            }
-                          }}
-                        >
-                          {ep.stillImage ? (
-                            <div className="relative w-28 aspect-video rounded-lg overflow-hidden bg-white/5 shrink-0">
+              {/* Episodes grid */}
+              <div
+                className="flex-1 min-h-0 overflow-y-auto px-4 md:px-8 pb-6"
+                style={{
+                  paddingBottom: 'max(1.5rem, env(safe-area-inset-bottom))',
+                }}
+              >
+                {episodes.length > 0 ? (
+                  <>
+                    <h3 className="text-sm font-semibold text-white/70 mb-3 md:mb-4 uppercase tracking-wider text-xs">
+                      {nextEpisode ? 'Otros episodios' : 'Episodios'}
+                    </h3>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 md:gap-4">
+                      {episodes.map((ep) => {
+                        const isCurrent = playingEpisode?.id === ep.id;
+                        const isNext = nextEpisode?.id === ep.id;
+                        return (
+                          <motion.button
+                            key={ep.id}
+                            initial={{ opacity: 0, y: 8 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ duration: 0.3, delay: 0.02 * episodes.indexOf(ep) }}
+                            whileHover={{ y: -2 }}
+                            whileTap={{ scale: 0.98 }}
+                            className="group text-left w-full"
+                            onClick={() => {
+                              if (playingMovie) {
+                                setShowEndScreen(false);
+                                openPlayer(playingMovie, ep);
+                              }
+                            }}
+                          >
+                            {/* Thumbnail */}
+                            <div className={`relative aspect-video rounded-xl overflow-hidden border transition-colors ${isCurrent ? 'border-white/30' : 'border-white/[0.08] group-hover:border-white/20'}`}>
                               <img
-                                src={ep.stillImage}
+                                src={
+                                  ep.stillImage
+                                    || (ep.filePath ? `/api/episode/frame?id=${ep.id}` : null)
+                                    || playingMovie?.backdropImage
+                                }
                                 alt={ep.title}
-                                className="h-full w-full object-cover"
+                                className="w-full h-full object-cover transition-transform duration-500 ease-out group-hover:scale-[1.05]"
                                 loading="lazy"
+                                onError={(e) => {
+                                  const t = e.currentTarget;
+                                  t.style.display = 'none';
+                                  const fb = t.nextElementSibling as HTMLElement;
+                                  if (fb) fb.style.display = 'flex';
+                                }}
                               />
-                              <div className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/40 transition-colors">
-                                <Play className="h-8 w-8 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                              <div className="absolute inset-0 bg-gradient-to-br from-white/[0.06] to-white/[0.02] items-center justify-center" style={{ display: 'none' }}>
+                                <Play className="h-6 w-6 text-white/20" />
                               </div>
+
+                              {/* Current episode overlay */}
+                              {isCurrent && (
+                                <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                                  <div className="w-10 h-10 rounded-full bg-white/90 flex items-center justify-center">
+                                    <Play className="h-4 w-4 text-black ml-0.5" fill="black" />
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Hover overlay */}
+                              {!isCurrent && (
+                                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors duration-200 flex items-center justify-center">
+                                  <div className="w-9 h-9 rounded-full bg-white/90 flex items-center justify-center opacity-0 group-hover:opacity-100 scale-75 group-hover:scale-100 transition-all duration-200">
+                                    <Play className="h-3.5 w-3.5 text-black ml-0.5" fill="black" />
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Episode badge */}
+                              <div className={`absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded text-[10px] font-semibold backdrop-blur-md ${isNext ? 'bg-[#e50914]/80 text-white' : 'bg-black/60 text-white'}`}>
+                                E{ep.episodeNumber}
+                              </div>
+
+                              {/* Next episode indicator */}
+                              {isNext && (
+                                <div className="absolute bottom-1.5 right-1.5 bg-[#e50914]/80 backdrop-blur-md px-1.5 py-0.5 rounded text-[10px] text-white font-medium">
+                                  Siguiente
+                                </div>
+                              )}
+
+                              {/* Watched checkmark */}
+                              {isCurrent && (
+                                <div className="absolute top-1.5 right-1.5 w-5 h-5 rounded-full bg-white/90 flex items-center justify-center">
+                                  <svg className="h-3 w-3 text-black" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                                </div>
+                              )}
                             </div>
-                          ) : (
-                            <div className="w-28 aspect-video rounded-lg bg-white/10 shrink-0 flex items-center justify-center">
-                              <Play className="h-6 w-6 text-white/30" />
+
+                            {/* Info */}
+                            <div className="mt-1.5 px-0.5">
+                              <p className="text-[12px] text-white/80 group-hover:text-white line-clamp-1 transition-colors leading-snug">
+                                {ep.title}
+                              </p>
+                              <p className="text-[10px] text-white/35 mt-0.5">
+                                T{ep.seasonNumber}:E{ep.episodeNumber}
+                                {ep.duration && ` · ${ep.duration}`}
+                              </p>
                             </div>
-                          )}
-                          <div className="flex-1 min-w-0 py-0.5">
-                            <p className="text-xs font-semibold text-white line-clamp-2 leading-snug">
-                              {ep.title}
-                            </p>
-                            <p className="text-[10px] text-white/50 mt-1">
-                              T{ep.seasonNumber}:E{ep.episodeNumber}
-                              {ep.duration && ` · ${ep.duration}`}
-                            </p>
-                          </div>
-                        </button>
-                      );
-                    })}
+                          </motion.button>
+                        );
+                      })}
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-16">
+                    <p className="text-white/30 text-sm">
+                      No hay más episodios disponibles.
+                    </p>
                   </div>
-                </>
-              ) : (
-                <div className="flex flex-col items-center justify-center py-16">
-                  <p className="text-white/40 text-sm">
-                    No hay más episodios disponibles.
-                  </p>
-                </div>
-              )}
+                )}
+              </div>
             </div>
           </motion.div>
         )}
