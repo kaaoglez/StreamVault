@@ -8,7 +8,7 @@ const nextConfig: NextConfig = {
   },
   reactStrictMode: false,
   devIndicators: false,
-  allowedDevOrigins: ["192.168.3.12"],
+  allowedDevOrigins: ["10.0.0.172"],
 };
 
 export default nextConfig;
